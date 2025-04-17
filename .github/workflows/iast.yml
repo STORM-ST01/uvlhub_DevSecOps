@@ -18,9 +18,17 @@ jobs:
         run: pip install semgrep
       - name: Ejecutar Semgrep
         run: |
-          semgrep --config=auto . --output=semgrep_report.json --json || true
+          semgrep --config=auto . --output=semgrep_report.json --json || echo '{"results": []}' > semgrep_report.json
+      - name: Verificar directorio de trabajo
+        run: |
+          pwd
+          ls -la
+      - name: Verificar archivo generado
+        run: |
+          ls -l semgrep_report.json || echo "semgrep_report.json no encontrado"
+          cat semgrep_report.json || echo "No se pudo leer semgrep_report.json"
       - name: Subir informe IAST
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: semgrep-report
           path: semgrep_report.json

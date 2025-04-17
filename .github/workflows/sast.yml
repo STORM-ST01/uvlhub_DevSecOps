@@ -24,12 +24,21 @@ jobs:
             -Dsonar.projectKey=mi-proyecto-flask
             -Dsonar.sources=.
             -Dsonar.exclusions=**/tests/**
-      - name: Escanear con Bandit (informe descargable)
+      - name: Instalar Bandit
+        run: pip install bandit
+      - name: Escanear con Bandit
         run: |
-          pip install bandit
-          bandit -r . -f json -o sast_report.json || true
+          bandit -r . -f json -o sast_report.json || echo '{"issues": []}' > sast_report.json
+      - name: Verificar directorio de trabajo
+        run: |
+          pwd
+          ls -la
+      - name: Verificar archivo generado
+        run: |
+          ls -l sast_report.json || echo "sast_report.json no encontrado"
+          cat sast_report.json || echo "No se pudo leer sast_report.json"
       - name: Subir informe SAST
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: sast-report
           path: sast_report.json

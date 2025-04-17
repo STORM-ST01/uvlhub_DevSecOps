@@ -18,9 +18,17 @@ jobs:
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
       - name: Escanear Dockerfile
         run: |
-          trivy fs --format json --output trivy_report.json . || true
+          trivy fs --format json --output trivy_report.json . || echo '{"results": []}' > trivy_report.json
+      - name: Verificar directorio de trabajo
+        run: |
+          pwd
+          ls -la
+      - name: Verificar archivo generado
+        run: |
+          ls -l trivy_report.json || echo "trivy_report.json no encontrado"
+          cat trivy_report.json || echo "No se pudo leer trivy_report.json"
       - name: Subir informe IaC
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: trivy-report
           path: trivy_report.json

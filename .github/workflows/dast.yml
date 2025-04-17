@@ -26,8 +26,16 @@ jobs:
         with:
           target: 'http://localhost:5000'
           fail_action: false
+      - name: Verificar directorio de trabajo
+        run: |
+          pwd
+          ls -la
+      - name: Verificar archivo generado
+        run: |
+          ls -l zap_baseline_report.json || echo "zap_baseline_report.json no encontrado"
+          cat zap_baseline_report.json || echo "No se pudo leer zap_baseline_report.json"
       - name: Subir informe DAST
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: zap-report
           path: zap_baseline_report.json
