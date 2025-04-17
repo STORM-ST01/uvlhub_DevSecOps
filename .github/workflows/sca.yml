@@ -25,7 +25,7 @@ jobs:
       - name: Escanear dependencias con pip-audit
         run: |
           if [ -f requirements.txt ]; then
-            pip-audit -r requirements.txt --format json > sca_report.json 2>/dev/null || echo '{"vulnerabilities": []}' > sca_report.json
+            pip-audit -r requirements.txt --format json --output sca_report.json || echo '{"vulnerabilities": []}' > sca_report.json
           else
             echo '{"vulnerabilities": []}' > sca_report.json
           fi
