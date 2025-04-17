@@ -21,7 +21,7 @@ jobs:
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
         with:
           args: >
-            -Dsonar.projectKey=mi-proyecto-flask
+            -Dsonar.projectKey=STORM-ST01_uvlhub_DevSecOps
             -Dsonar.sources=.
             -Dsonar.exclusions=**/tests/**
       - name: Instalar Bandit
