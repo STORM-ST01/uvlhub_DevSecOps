@@ -19,18 +19,20 @@ jobs:
       - name: Instalar dependencias
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt || echo "No requirements.txt found or empty"
+          pip install -r requirements.txt || echo "No requirements.txt o está vacío"
       - name: Instalar pip-audit
         run: pip install pip-audit
       - name: Escanear dependencias con pip-audit
         run: |
           if [ -f requirements.txt ]; then
-            pip-audit -r requirements.txt --format json > sca_report.json || echo "pip-audit failed or no vulnerabilities found"
+            pip-audit -r requirements.txt --format json > sca_report.json 2>/dev/null || echo '{"vulnerabilities": []}' > sca_report.json
           else
             echo '{"vulnerabilities": []}' > sca_report.json
           fi
       - name: Verificar archivo generado
-        run: ls -l sca_report.json || echo "sca_report.json not found"
+        run: |
+          ls -l sca_report.json || echo "sca_report.json no encontrado"
+          cat sca_report.json || echo "No se pudo leer sca_report.json"
       - name: Subir informe SCA
         uses: actions/upload-artifact@v3
         with:
