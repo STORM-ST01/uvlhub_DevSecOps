@@ -1,0 +1,26 @@
+name: Seguridad en Infraestructura como Código (IaC)
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'Dockerfile'
+      - '**/docker-compose.yml'
+
+jobs:
+  iac:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clonar repositorio
+        uses: actions/checkout@v3
+      - name: Instalar Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+      - name: Escanear Dockerfile
+        run: |
+          trivy fs --format json --output trivy_report.json . || true
+      - name: Subir informe IaC
+        uses: actions/upload-artifact@v3
+        with:
+          name: trivy-report
+          path: trivy_report.json

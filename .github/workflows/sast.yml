@@ -1,0 +1,35 @@
+name: Pruebas Estáticas de Seguridad (SAST)
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  sast:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clonar repositorio
+        uses: actions/checkout@v3
+      - name: Configurar Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      - name: Ejecutar SonarQube
+        uses: sonarsource/sonarqube-scan-action@master
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        with:
+          args: >
+            -Dsonar.projectKey=mi-proyecto-flask
+            -Dsonar.sources=.
+            -Dsonar.exclusions=**/tests/**
+      - name: Escanear con Bandit (informe descargable)
+        run: |
+          pip install bandit
+          bandit -r . -f json -o sast_report.json || true
+      - name: Subir informe SAST
+        uses: actions/upload-artifact@v3
+        with:
+          name: sast-report
+          path: sast_report.json

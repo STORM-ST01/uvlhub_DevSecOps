@@ -1,0 +1,26 @@
+name: Pruebas Interactivas de Seguridad (IAST)
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  iast:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clonar repositorio
+        uses: actions/checkout@v3
+      - name: Configurar Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      - name: Instalar Semgrep
+        run: pip install semgrep
+      - name: Ejecutar Semgrep
+        run: |
+          semgrep --config=auto . --output=semgrep_report.json --json || true
+      - name: Subir informe IAST
+        uses: actions/upload-artifact@v3
+        with:
+          name: semgrep-report
+          path: semgrep_report.json

@@ -1,0 +1,31 @@
+name: Análisis de Composición de Código (SCA)
+
+on:
+  push:
+    branches: [ main ]
+  schedule:
+    - cron: '0 0 * * *'
+
+jobs:
+  sca:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clonar repositorio
+        uses: actions/checkout@v3
+      - name: Configurar Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Escanear dependencias con pip-audit
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt --format json > sca_report.json || true
+      - name: Subir informe SCA
+        uses: actions/upload-artifact@v3
+        with:
+          name: sca-report
+          path: sca_report.json
