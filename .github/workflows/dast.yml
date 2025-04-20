@@ -23,8 +23,8 @@ jobs:
       - name: Instalar dependencias
         run: |
           pip install -r requirements.txt
-          pip list  # Mostrar paquetes instalados
-          pip check  # Verificar conflictos de dependencias
+          pip list
+          pip check
 
       - name: Iniciar aplicación Flask
         run: |
@@ -61,6 +61,46 @@ jobs:
         run: |
           ls -l report_json.json || echo "report_json.json no encontrado"
           cat report_json.json || echo "No se pudo leer report_json.json"
+
+      - name: Instalar jq
+        run: |
+          sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Crear engagement en DefectDojo
+        env:
+          DEFECTDOJO_TOKEN: ${{ secrets.DEFECTDOJO_TOKEN }}
+          DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
+        run: |
+          ENGAGEMENT_ID=$(curl --fail --location --request POST "$DEFECTDOJO_URL/api/v2/engagements/" \
+            -H "Authorization: Token $DEFECTDOJO_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data-raw '{
+              "name": "DAST-Pipeline-${{ github.run_id }}",
+              "description": "Escaneo DAST para commit ${{ github.sha }}",
+              "product": "${{ secrets.DEFECTDOJO_PRODUCT_ID }}",
+              "target_start": "$(date +%Y-%m-%d)",
+              "target_end": "$(date -d '+7 days' +%Y-%m-%d)",
+              "engagement_type": "CI/CD",
+              "status": "In Progress",
+              "build_id": "${{ github.run_id }}",
+              "commit_hash": "${{ github.sha }}",
+              "branch_tag": "${{ github.ref_name }}",
+              "deduplication_on_engagement": false
+            }' | jq -r '.id')
+          echo "DEFECTDOJO_ENGAGEMENT_ID=$ENGAGEMENT_ID" >> $GITHUB_ENV
+
+      - name: Subir informe a DefectDojo
+        uses: ivanamat/defectdojo-import-scan@v1
+        with:
+          token: ${{ secrets.DEFECTDOJO_TOKEN }}
+          defectdojo_url: ${{ secrets.DEFECTDOJO_URL }}
+          file: report_json.json
+          scan_type: ZAP Scan
+          engagement: ${{ env.DEFECTDOJO_ENGAGEMENT_ID }}
+          verified: true
+          active: true
+          minimum_severity: Info
+          close_old_findings: false
 
       - name: Crear issue con resultados de ZAP
         if: success()
