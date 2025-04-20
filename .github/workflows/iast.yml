@@ -4,29 +4,119 @@ on:
   push:
     branches: [ main ]
 
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   iast:
     runs-on: ubuntu-latest
     steps:
       - name: Clonar repositorio
         uses: actions/checkout@v3
+
       - name: Configurar Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
+
       - name: Instalar Semgrep
-        run: pip install semgrep
+        run: |
+          pip install semgrep
+          semgrep --version
+
+      - name: Listar archivos a escanear
+        run: |
+          echo "Archivos en el directorio (excluyendo tests/):"
+          find . -type f -not -path "*/tests/*" || echo "No se encontraron archivos."
+
       - name: Ejecutar Semgrep
         run: |
-          semgrep --config=auto . --output=semgrep_report.json --json || echo '{"results": []}' > semgrep_report.json
+          semgrep --config=auto . --output=semgrep_report.json --json --verbose > semgrep.log 2>&1 || true
+
+      - name: Asegurar archivo semgrep_report.json
+        run: |
+          if [ ! -f semgrep_report.json ]; then
+            echo '{"results": []}' > semgrep_report.json
+            echo "Semgrep no generó semgrep_report.json, creando archivo vacío."
+          fi
+
+      - name: Mostrar log de Semgrep
+        run: |
+          echo "Log de Semgrep:"
+          cat semgrep.log
+
       - name: Verificar directorio de trabajo
         run: |
           pwd
           ls -la
+
       - name: Verificar archivo generado
         run: |
           ls -l semgrep_report.json || echo "semgrep_report.json no encontrado"
           cat semgrep_report.json || echo "No se pudo leer semgrep_report.json"
+
+      - name: Reportar resultados de Semgrep
+        run: |
+          ISSUE_COUNT=$(jq '.results | length' semgrep_report.json)
+          echo "Semgrep encontró $ISSUE_COUNT problemas."
+          if [ "$ISSUE_COUNT" -eq 0 ]; then
+            echo "No se encontraron vulnerabilidades."
+          fi
+
+      - name: Instalar jq
+        run: |
+          sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Crear engagement en DefectDojo
+        env:
+          DEFECTDOJO_TOKEN: ${{ secrets.DEFECTDOJO_TOKEN }}
+          DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
+        run: |
+          TODAY=$(date +%Y-%m-%d)
+          NEXT_WEEK=$(date -d "$TODAY +7 days" +%Y-%m-%d || date -v +7d +%Y-%m-%d)
+          RESPONSE=$(curl --fail --location --request POST "$DEFECTDOJO_URL/api/v2/engagements/" \
+            -H "Authorization: Token $DEFECTDOJO_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data-raw '{
+              "name": "IAST-Pipeline-${{ github.run_id }}",
+              "description": "Escaneo IAST para commit ${{ github.sha }}",
+              "product": "${{ secrets.DEFECTDOJO_PRODUCT_ID }}",
+              "target_start": "'"$TODAY"'",
+              "target_end": "'"$NEXT_WEEK"'",
+              "engagement_type": "CI/CD",
+              "status": "In Progress",
+              "build_id": "${{ github.run_id }}",
+              "commit_hash": "${{ github.sha }}",
+              "branch_tag": "${{ github.ref_name }}",
+              "deduplication_on_engagement": true
+            }')
+          echo "Respuesta de DefectDojo: $RESPONSE"
+          ENGAGEMENT_ID=$(echo "$RESPONSE" | jq -r '.id')
+          if [ -z "$ENGAGEMENT_ID" ] || [ "$ENGAGEMENT_ID" = "null" ]; then
+            echo "Error: No se pudo crear el engagement. Respuesta: $RESPONSE"
+            exit 1
+          fi
+          echo "DEFECTDOJO_ENGAGEMENT_ID=$ENGAGEMENT_ID" >> $GITHUB_ENV
+
+      - name: Subir informe a DefectDojo
+        uses: ivanamat/defectdojo-import-scan@v1
+        with:
+          token: ${{ secrets.DEFECTDOJO_TOKEN }}
+          defectdojo_url: ${{ secrets.DEFECTDOJO_URL }}
+          file: semgrep_report.json
+          scan_type: Semgrep JSON Report
+          engagement: ${{ env.DEFECTDOJO_ENGAGEMENT_ID }}
+          verified: true
+          active: true
+          minimum_severity: Info
+          close_old_findings: true
+
+      - name: Mostrar logs de importación
+        if: failure()
+        run: |
+          cat /tmp/defectdojo-import-scan.log || echo "No se encontró el log de importación"
+
       - name: Subir informe IAST
         uses: actions/upload-artifact@v4
         with:
