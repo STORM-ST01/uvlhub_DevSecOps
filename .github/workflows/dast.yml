@@ -3,7 +3,9 @@ name: Pruebas Dinámicas de Seguridad (DAST)
 on:
   push:
     branches: [ main ]
-
+permissions:
+  contents: read
+  issues: write
 jobs:
   dast:
     runs-on: ubuntu-latest
