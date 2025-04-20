@@ -5,7 +5,8 @@ on:
     branches: [ main ]
     paths:
       - 'Dockerfile'
-      - '**/docker-compose.yml'
+      - 'docker/docker-compose.dev.yml'
+      - '.github/workflows/iac.yml'
 
 jobs:
   iac:
