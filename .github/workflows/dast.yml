@@ -19,8 +19,9 @@ jobs:
           pip install -r requirements.txt
       - name: Iniciar aplicación Flask
         run: |
-          python app.py &  # Ajusta según tu archivo principal
-          sleep 10
+          export FLASK_APP_NAME=UVLHUB.IO(dev)
+          flask run --host=0.0.0.0 --port=5000 &
+          sleep 15
       - name: Escaneo OWASP ZAP 
         uses: zaproxy/action-baseline@v0.14.0
         with:
