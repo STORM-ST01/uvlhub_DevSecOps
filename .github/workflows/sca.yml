@@ -6,39 +6,139 @@ on:
   schedule:
     - cron: '0 0 * * *'
 
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   sca:
     runs-on: ubuntu-latest
     steps:
       - name: Clonar repositorio
         uses: actions/checkout@v3
+
       - name: Configurar Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
+
       - name: Instalar dependencias
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt || echo "No requirements.txt o está vacío"
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          else
+            echo "No requirements.txt o está vacío"
+          fi
+
+      - name: Verificar requirements.txt
+        run: |
+          if [ -f requirements.txt ]; then
+            echo "Contenido de requirements.txt:"
+            cat requirements.txt
+          else
+            echo "requirements.txt no encontrado"
+          fi
+
       - name: Instalar pip-audit
-        run: pip install pip-audit==2.7.3
+        run: |
+          pip install pip-audit==2.7.3
+          pip-audit --version
+
       - name: Escanear dependencias con pip-audit
         run: |
           if [ -f requirements.txt ]; then
-            pip-audit -r requirements.txt --format json --output sca_report.json || echo '{"vulnerabilities": []}' > sca_report.json
+            pip-audit -r requirements.txt --format json --output sca_report.json > pip_audit.log 2>&1 || true
           else
+            echo "requirements.txt no encontrado, creando informe vacío"
             echo '{"vulnerabilities": []}' > sca_report.json
           fi
+
+      - name: Asegurar archivo sca_report.json
+        run: |
+          if [ ! -f sca_report.json ]; then
+            echo '{"vulnerabilities": []}' > sca_report.json
+            echo "pip-audit no generó sca_report.json, creando archivo vacío."
+          fi
+
+      - name: Mostrar log de pip-audit
+        run: |
+          echo "Log de pip-audit:"
+          cat pip_audit.log || echo "No se encontró pip_audit.log"
+
       - name: Verificar directorio de trabajo
         run: |
           pwd
           ls -la
+
       - name: Verificar archivo generado
         run: |
           ls -l sca_report.json || echo "sca_report.json no encontrado"
           cat sca_report.json || echo "No se pudo leer sca_report.json"
+
+      - name: Reportar resultados de pip-audit
+        run: |
+          ISSUE_COUNT=$(jq '.vulnerabilities | length' sca_report.json)
+          echo "pip-audit encontró $ISSUE_COUNT vulnerabilidades."
+          if [ "$ISSUE_COUNT" -eq 0 ]; then
+            echo "No se encontraron vulnerabilidades en las dependencias."
+          fi
+
+      - name: Instalar jq
+        run: |
+          sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Crear engagement en DefectDojo
+        env:
+          DEFECTDOJO_TOKEN: ${{ secrets.DEFECTDOJO_TOKEN }}
+          DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
+        run: |
+          TODAY=$(date +%Y-%m-%d)
+          NEXT_WEEK=$(date -d "$TODAY +7 days" +%Y-%m-%d || date -v +7d +%Y-%m-%d)
+          RESPONSE=$(curl --fail --location --request POST "$DEFECTDOJO_URL/api/v2/engagements/" \
+            -H "Authorization: Token $DEFECTDOJO_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data-raw '{
+              "name": "SCA-Pipeline-${{ github.run_id }}",
+              "description": "Escaneo SCA para commit ${{ github.sha }}",
+              "product": "${{ secrets.DEFECTDOJO_PRODUCT_ID }}",
+              "target_start": "'"$TODAY"'",
+              "target_end": "'"$NEXT_WEEK"'",
+              "engagement_type": "CI/CD",
+              "status": "In Progress",
+              "build_id": "${{ github.run_id }}",
+              "commit_hash": "${{ github.sha }}",
+              "branch_tag": "${{ github.ref_name }}",
+              "deduplication_on_engagement": true
+            }')
+          echo "Respuesta de DefectDojo: $RESPONSE"
+          ENGAGEMENT_ID=$(echo "$RESPONSE" | jq -r '.id')
+          if [ -z "$ENGAGEMENT_ID" ] || [ "$ENGAGEMENT_ID" = "null" ]; then
+            echo "Error: No se pudo crear el engagement. Respuesta: $RESPONSE"
+            exit 1
+          fi
+          echo "DEFECTDOJO_ENGAGEMENT_ID=$ENGAGEMENT_ID" >> $GITHUB_ENV
+
+      - name: Subir informe a DefectDojo
+        uses: ivanamat/defectdojo-import-scan@v1
+        with:
+          token: ${{ secrets.DEFECTDOJO_TOKEN }}
+          defectdojo_url: ${{ secrets.DEFECTDOJO_URL }}
+          file: sca_report.json
+          scan_type: Pip Audit Scan
+          engagement: ${{ env.DEFECTDOJO_ENGAGEMENT_ID }}
+          verified: true
+          active: true
+          minimum_severity: Info
+          close_old_findings: true
+
+      - name: Mostrar logs de importación
+        if: failure()
+        run: |
+          cat /tmp/defectdojo-import-scan.log || echo "No se encontró el log de importación"
+
       - name: Subir informe SCA
-        uses: actions/upload-artifact@v4  # Cambiar a v4
+        uses: actions/upload-artifact@v4
         with:
           name: sca-report
           path: sca_report.json
