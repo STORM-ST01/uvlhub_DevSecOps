@@ -3,9 +3,11 @@ name: Pruebas Dinámicas de Seguridad (DAST)
 on:
   push:
     branches: [ main ]
+
 permissions:
   contents: read
   issues: write
+
 jobs:
   dast:
     runs-on: ubuntu-latest
@@ -38,12 +40,17 @@ jobs:
           done
           curl http://localhost:5000 || (echo "Error: No se pudo conectar a Flask"; cat flask.log; exit 1)
 
+      - name: Mostrar logs de Flask si falla
+        if: failure()
+        run: |
+          cat flask.log
+
       - name: Escaneo OWASP ZAP
         uses: zaproxy/action-baseline@v0.14.0
         with:
           target: 'http://localhost:5000'
           fail_action: false
-          cmd_options: '-d'  # Modo debug para más detalles
+          cmd_options: '-d'
 
       - name: Verificar directorio de trabajo
         run: |
@@ -55,8 +62,42 @@ jobs:
           ls -l zap_baseline_report.json || echo "zap_baseline_report.json no encontrado"
           cat zap_baseline_report.json || echo "No se pudo leer zap_baseline_report.json"
 
+      - name: Crear issue con resultados de ZAP
+        if: success()  # Solo intenta crear issue si el escaneo fue exitoso
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = JSON.parse(fs.readFileSync('zap_baseline_report.json', 'utf8'));
+            const alerts = report.site[0].alerts || [];
+            const alertSummary = alerts.map(alert => `- ${alert.name}: ${alert.riskdesc} (${alert.count} instancias)`).join('\n');
+            
+            const issueTitle = 'ZAP Scan Baseline Report';
+            const existingIssues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: ['ZAP']
+            });
+            
+            const issueExists = existingIssues.data.some(issue => issue.title === issueTitle);
+            if (!issueExists) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: issueTitle,
+                body: `## ZAP Scan Baseline Report\n\nResultados del escaneo de seguridad:\n${alertSummary}\n\nDetalles completos en el reporte adjunto.`,
+                labels: ['ZAP', 'security']
+              });
+            } else {
+              console.log('Issue ya existe, omitiendo creación.');
+            }
+
       - name: Subir informe DAST
         uses: actions/upload-artifact@v4
         with:
           name: zap-report
-          path: zap_baseline_report.json
+          path: |
+            zap_baseline_report.json
+            report_html.html
+            report_md.md
