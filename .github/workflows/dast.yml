@@ -19,7 +19,8 @@ jobs:
           pip install -r requirements.txt
       - name: Iniciar aplicación Flask
         run: |
-          export FLASK_APP_NAME=UVLHUB.IO(dev)
+          export FLASK_APP_NAME=app
+          export FLASK_ENV=development
           flask run --host=0.0.0.0 --port=5000 &
           sleep 15
       - name: Escaneo OWASP ZAP 
