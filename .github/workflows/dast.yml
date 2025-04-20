@@ -50,8 +50,7 @@ jobs:
         with:
           target: 'http://localhost:5000'
           fail_action: false
-          cmd_options: '-d -J report_json.json -r report_html.html'
-        
+          cmd_options: '-d -x report_xml.xml -r report_html.html'
 
       - name: Verificar directorio de trabajo
         run: |
@@ -60,8 +59,8 @@ jobs:
 
       - name: Verificar archivo generado
         run: |
-          ls -l report_json.json || echo "report_json.json no encontrado"
-          cat report_json.json || echo "No se pudo leer report_json.json"
+          ls -l report_xml.xml || echo "report_xml.xml no encontrado"
+          cat report_xml.xml || echo "No se pudo leer report_xml.xml"
 
       - name: Instalar jq
         run: |
@@ -88,7 +87,7 @@ jobs:
               "build_id": "${{ github.run_id }}",
               "commit_hash": "${{ github.sha }}",
               "branch_tag": "${{ github.ref_name }}",
-              "deduplication_on_engagement": false
+              "deduplication_on_engagement": true
             }')
           echo "Respuesta de DefectDojo: $RESPONSE"
           ENGAGEMENT_ID=$(echo "$RESPONSE" | jq -r '.id')
@@ -103,13 +102,18 @@ jobs:
         with:
           token: ${{ secrets.DEFECTDOJO_TOKEN }}
           defectdojo_url: ${{ secrets.DEFECTDOJO_URL }}
-          file: report_json.json
+          file: report_xml.xml
           scan_type: ZAP Scan
           engagement: ${{ env.DEFECTDOJO_ENGAGEMENT_ID }}
           verified: true
           active: true
           minimum_severity: Info
-          close_old_findings: false
+          close_old_findings: true
+
+      - name: Mostrar logs de importación
+        if: failure()
+        run: |
+          cat /tmp/defectdojo-import-scan.log || echo "No se encontró el log de importación"
 
       - name: Crear issue con resultados de ZAP
         if: success()
@@ -117,7 +121,7 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const report = JSON.parse(fs.readFileSync('report_json.json', 'utf8'));
+            const report = JSON.parse(fs.readFileSync('report_json.json', 'utf8')); // Cambiar a XML si es necesario
             const alerts = report.site[0].alerts || [];
             const alertSummary = alerts.map(alert => `- ${alert.name}: ${alert.riskdesc} (${alert.count} instancias)`).join('\n');
             
@@ -147,6 +151,6 @@ jobs:
         with:
           name: zap-report
           path: |
-            report_json.json
+            report_xml.xml
             report_html.html
             report_md.md
