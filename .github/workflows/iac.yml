@@ -41,10 +41,11 @@ jobs:
         env:
           DEFECTDOJO_TOKEN: ${{ secrets.DEFECTDOJO_TOKEN }}
           DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
+        continue-on-error: true
         run: |
           TODAY=$(date +%Y-%m-%d)
-          NEXT_WEEK=$(date -d "7 days" +%Y-%m-%d)
-          RESPONSE=$(curl --fail --location --request POST "$DEFECTDOJO_URL/api/v2/engagements/" \
+          NEXT_WEEK=$(date -d "$TODAY +7 days" +%Y-%m-%d || date -v +7d +%Y-%m-%d)
+          RESPONSE=$(curl --location --request POST "$DEFECTDOJO_URL/api/v2/engagements/" \
             -H "Authorization: Token $DEFECTDOJO_TOKEN" \
             -H "Content-Type: application/json" \
             --data-raw '{
@@ -60,22 +61,30 @@ jobs:
               "branch_tag": "${{ github.ref_name }}",
               "version": "${{ github.sha }}",
               "deduplication_on_engagement": false
-            }')
-          echo "Respuesta de DefectDojo: $RESPONSE"
-          ENGAGEMENT_ID=$(echo "$RESPONSE" | jq -r '.id')
-          if [ -z "$ENGAGEMENT_ID" ] || [ "$ENGAGEMENT_ID" = "null" ]; then
-            echo "Error: No se pudo crear el engagement. Respuesta: $RESPONSE"
-            exit 1
+            }' || echo "Error al conectar con DefectDojo")
+          if [[ "$RESPONSE" == *"Error al conectar con DefectDojo"* ]]; then
+            echo "DefectDojo no está disponible. Continuando sin crear engagement."
+            echo "DEFECTDOJO_ENGAGEMENT_ID=none" >> $GITHUB_ENV
+          else
+            ENGAGEMENT_ID=$(echo "$RESPONSE" | jq -r '.id')
+            if [ -z "$ENGAGEMENT_ID" ] || [ "$ENGAGEMENT_ID" = "null" ]; then
+              echo "Error: No se pudo crear el engagement. Respuesta: $RESPONSE"
+              echo "DEFECTDOJO_ENGAGEMENT_ID=none" >> $GITHUB_ENV
+            else
+              echo "Engagement creado con ID: $ENGAGEMENT_ID"
+              echo "DEFECTDOJO_ENGAGEMENT_ID=$ENGAGEMENT_ID" >> $GITHUB_ENV
+            fi
           fi
-          echo "DEFECTDOJO_ENGAGEMENT_ID=$ENGAGEMENT_ID" >> $GITHUB_ENV
 
       - name: Subir informe a DefectDojo
+        if: env.DEFECTDOJO_ENGAGEMENT_ID != 'none'
         env:
           DEFECTDOJO_TOKEN: ${{ secrets.DEFECTDOJO_TOKEN }}
           DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
           ENGAGEMENT_ID: ${{ env.DEFECTDOJO_ENGAGEMENT_ID }}
+        continue-on-error: true
         run: |
-          RESPONSE=$(curl --fail --location --request POST "$DEFECTDOJO_URL/api/v2/import-scan/" \
+          RESPONSE=$(curl --location --request POST "$DEFECTDOJO_URL/api/v2/import-scan/" \
             -H "Authorization: Token $DEFECTDOJO_TOKEN" \
             -H "Content-Type: multipart/form-data" \
             -F "file=@trivy_report.json" \
@@ -85,14 +94,23 @@ jobs:
             -F "active=true" \
             -F "minimum_severity=Info" \
             -F "skip_duplicates=true" \
-            -F "close_old_findings=false")
-          echo "Respuesta de import-scan: $RESPONSE"
-          TEST_ID=$(echo "$RESPONSE" | jq -r '.test')
-          if [ -z "$TEST_ID" ] || [ "$TEST_ID" = "null" ]; then
-            echo "Error: No se pudo importar el escaneo. Respuesta: $RESPONSE"
-            exit 1
+            -F "close_old_findings=false" || echo "Error al subir informe a DefectDojo")
+          if [[ "$RESPONSE" == *"Error al subir informe a DefectDojo"* ]]; then
+            echo "No se pudo importar el escaneo a DefectDojo."
+          else
+            echo "Respuesta de import-scan: $RESPONSE"
+            TEST_ID=$(echo "$RESPONSE" | jq -r '.test')
+            if [ -z "$TEST_ID" ] || [ "$TEST_ID" = "null" ]; then
+              echo "Error: No se pudo importar el escaneo. Respuesta: $RESPONSE"
+            else
+              echo "Escaneo importado correctamente con Test ID: $TEST_ID"
+            fi
           fi
-          echo "Escaneo importado correctamente con Test ID: $TEST_ID"
+
+      - name: Mostrar mensaje si DefectDojo no está disponible
+        if: env.DEFECTDOJO_ENGAGEMENT_ID == 'none'
+        run: |
+          echo "No se pudo conectar con DefectDojo. El informe IaC está disponible como artefacto."
 
       - name: Subir informe IaC
         uses: actions/upload-artifact@v4

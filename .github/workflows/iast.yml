@@ -72,10 +72,11 @@ jobs:
         env:
           DEFECTDOJO_TOKEN: ${{ secrets.DEFECTDOJO_TOKEN }}
           DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
+        continue-on-error: true
         run: |
           TODAY=$(date +%Y-%m-%d)
           NEXT_WEEK=$(date -d "$TODAY +7 days" +%Y-%m-%d || date -v +7d +%Y-%m-%d)
-          RESPONSE=$(curl --fail --location --request POST "$DEFECTDOJO_URL/api/v2/engagements/" \
+          RESPONSE=$(curl --location --request POST "$DEFECTDOJO_URL/api/v2/engagements/" \
             -H "Authorization: Token $DEFECTDOJO_TOKEN" \
             -H "Content-Type: application/json" \
             --data-raw '{
@@ -90,17 +91,25 @@ jobs:
               "commit_hash": "${{ github.sha }}",
               "branch_tag": "${{ github.ref_name }}",
               "deduplication_on_engagement": true
-            }')
-          echo "Respuesta de DefectDojo: $RESPONSE"
-          ENGAGEMENT_ID=$(echo "$RESPONSE" | jq -r '.id')
-          if [ -z "$ENGAGEMENT_ID" ] || [ "$ENGAGEMENT_ID" = "null" ]; then
-            echo "Error: No se pudo crear el engagement. Respuesta: $RESPONSE"
-            exit 1
+            }' || echo "Error al conectar con DefectDojo")
+          if [[ "$RESPONSE" == *"Error al conectar con DefectDojo"* ]]; then
+            echo "DefectDojo no está disponible. Continuando sin crear engagement."
+            echo "DEFECTDOJO_ENGAGEMENT_ID=none" >> $GITHUB_ENV
+          else
+            ENGAGEMENT_ID=$(echo "$RESPONSE" | jq -r '.id')
+            if [ -z "$ENGAGEMENT_ID" ] || [ "$ENGAGEMENT_ID" = "null" ]; then
+              echo "Error: No se pudo crear el engagement. Respuesta: $RESPONSE"
+              echo "DEFECTDOJO_ENGAGEMENT_ID=none" >> $GITHUB_ENV
+            else
+              echo "Engagement creado con ID: $ENGAGEMENT_ID"
+              echo "DEFECTDOJO_ENGAGEMENT_ID=$ENGAGEMENT_ID" >> $GITHUB_ENV
+            fi
           fi
-          echo "DEFECTDOJO_ENGAGEMENT_ID=$ENGAGEMENT_ID" >> $GITHUB_ENV
 
       - name: Subir informe a DefectDojo
+        if: env.DEFECTDOJO_ENGAGEMENT_ID != 'none'
         uses: ivanamat/defectdojo-import-scan@v1
+        continue-on-error: true
         with:
           token: ${{ secrets.DEFECTDOJO_TOKEN }}
           defectdojo_url: ${{ secrets.DEFECTDOJO_URL }}
@@ -112,8 +121,14 @@ jobs:
           minimum_severity: Info
           close_old_findings: true
 
+      - name: Mostrar mensaje si DefectDojo no está disponible
+        if: env.DEFECTDOJO_ENGAGEMENT_ID == 'none'
+        run: |
+          echo "No se pudo conectar con DefectDojo. El informe IAST está disponible como artefacto."
+
       - name: Mostrar logs de importación
         if: failure()
+        continue-on-error: true
         run: |
           cat /tmp/defectdojo-import-scan.log || echo "No se encontró el log de importación"
 
