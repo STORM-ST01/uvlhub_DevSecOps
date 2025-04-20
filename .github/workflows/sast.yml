@@ -33,18 +33,34 @@ jobs:
             -Dsonar.exclusions=**/tests/**
 
       - name: Instalar Bandit
-        run: pip install bandit
+        run: |
+          pip install bandit
+          bandit --version
+
+      - name: Listar archivos Python
+        run: |
+          echo "Archivos Python encontrados:"
+          find . -type f -name "*.py" -not -path "*/tests/*" || echo "No se encontraron archivos Python."
+
+      - name: Crear archivo Python de prueba
+        run: |
+          echo 'import os\nos.system("rm -rf /")' > test_vuln.py
 
       - name: Escanear con Bandit
         run: |
-          bandit -r . -f json -o sast_report.json --exclude tests -d > bandit.log 2>&1 || echo '{"issues": []}' > sast_report.json
+          bandit -r . -f json -o sast_report.json --exclude tests -d -v > bandit.log 2>&1 || true
 
-      - name: Mostrar log de Bandit si no hay hallazgos
+      - name: Asegurar archivo sast_report.json
         run: |
-          if [ "$(jq '.results | length' sast_report.json)" -eq 0 ]; then
-            echo "Bandit no encontró hallazgos. Log de Bandit:"
-            cat bandit.log
+          if [ ! -f sast_report.json ]; then
+            echo '{"issues": []}' > sast_report.json
+            echo "Bandit no generó sast_report.json, creando archivo vacío."
           fi
+
+      - name: Mostrar log de Bandit
+        run: |
+          echo "Log de Bandit:"
+          cat bandit.log
 
       - name: Verificar directorio de trabajo
         run: |
