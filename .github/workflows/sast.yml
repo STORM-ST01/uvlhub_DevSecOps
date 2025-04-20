@@ -4,16 +4,22 @@ on:
   push:
     branches: [ main ]
 
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   sast:
     runs-on: ubuntu-latest
     steps:
       - name: Clonar repositorio
         uses: actions/checkout@v3
+
       - name: Configurar Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
+
       - name: Ejecutar SonarQube
         uses: sonarsource/sonarqube-scan-action@master
         env:
@@ -25,19 +31,77 @@ jobs:
             -Dsonar.organization=storm-st01
             -Dsonar.sources=.
             -Dsonar.exclusions=**/tests/**
+
       - name: Instalar Bandit
         run: pip install bandit
+
       - name: Escanear con Bandit
         run: |
           bandit -r . -f json -o sast_report.json || echo '{"issues": []}' > sast_report.json
+
       - name: Verificar directorio de trabajo
         run: |
           pwd
           ls -la
+
       - name: Verificar archivo generado
         run: |
           ls -l sast_report.json || echo "sast_report.json no encontrado"
           cat sast_report.json || echo "No se pudo leer sast_report.json"
+
+      - name: Instalar jq
+        run: |
+          sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Crear engagement en DefectDojo
+        env:
+          DEFECTDOJO_TOKEN: ${{ secrets.DEFECTDOJO_TOKEN }}
+          DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
+        run: |
+          TODAY=$(date +%Y-%m-%d)
+          NEXT_WEEK=$(date -d "$TODAY +7 days" +%Y-%m-%d || date -v +7d +%Y-%m-%d)
+          RESPONSE=$(curl --fail --location --request POST "$DEFECTDOJO_URL/api/v2/engagements/" \
+            -H "Authorization: Token $DEFECTDOJO_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data-raw '{
+              "name": "SAST-Pipeline-${{ github.run_id }}",
+              "description": "Escaneo SAST para commit ${{ github.sha }}",
+              "product": "${{ secrets.DEFECTDOJO_PRODUCT_ID }}",
+              "target_start": "'"$TODAY"'",
+              "target_end": "'"$NEXT_WEEK"'",
+              "engagement_type": "CI/CD",
+              "status": "In Progress",
+              "build_id": "${{ github.run_id }}",
+              "commit_hash": "${{ github.sha }}",
+              "branch_tag": "${{ github.ref_name }}",
+              "deduplication_on_engagement": true
+            }')
+          echo "Respuesta de DefectDojo: $RESPONSE"
+          ENGAGEMENT_ID=$(echo "$RESPONSE" | jq -r '.id')
+          if [ -z "$ENGAGEMENT_ID" ] || [ "$ENGAGEMENT_ID" = "null" ]; then
+            echo "Error: No se pudo crear el engagement. Respuesta: $RESPONSE"
+            exit 1
+          fi
+          echo "DEFECTDOJO_ENGAGEMENT_ID=$ENGAGEMENT_ID" >> $GITHUB_ENV
+
+      - name: Subir informe a DefectDojo
+        uses: ivanamat/defectdojo-import-scan@v1
+        with:
+          token: ${{ secrets.DEFECTDOJO_TOKEN }}
+          defectdojo_url: ${{ secrets.DEFECTDOJO_URL }}
+          file: sast_report.json
+          scan_type: Bandit Scan
+          engagement: ${{ env.DEFECTDOJO_ENGAGEMENT_ID }}
+          verified: true
+          active: true
+          minimum_severity: Info
+          close_old_findings: true
+
+      - name: Mostrar logs de importación
+        if: failure()
+        run: |
+          cat /tmp/defectdojo-import-scan.log || echo "No se encontró el log de importación"
+
       - name: Subir informe SAST
         uses: actions/upload-artifact@v4
         with:
