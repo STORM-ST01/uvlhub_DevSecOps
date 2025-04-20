@@ -8,7 +8,7 @@ from app.modules.profile.models import UserProfile
 from app.modules.profile.repositories import UserProfileRepository
 from core.configuration.configuration import uploads_folder_name
 from core.services.BaseService import BaseService
-
+from typing import Union
 
 class AuthenticationService(BaseService):
     def __init__(self):
@@ -72,9 +72,9 @@ class AuthenticationService(BaseService):
             return current_user
         return None
 
-    def get_authenticated_user_profile(self) -> UserProfile | None:
+    def get_authenticated_user(self) -> Union[User, None]:
         if current_user.is_authenticated:
-            return current_user.profile
+                return current_user.profile
         return None
 
     def temp_folder_by_user(self, user: User) -> str:
