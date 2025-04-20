@@ -22,6 +22,7 @@ jobs:
         with:
           args: >
             -Dsonar.projectKey=STORM-ST01_uvlhub_DevSecOps
+            -Dsonar.organization=storm-st01
             -Dsonar.sources=.
             -Dsonar.exclusions=**/tests/**
       - name: Instalar Bandit
