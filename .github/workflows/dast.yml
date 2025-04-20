@@ -10,32 +10,48 @@ jobs:
     steps:
       - name: Clonar repositorio
         uses: actions/checkout@v3
+
       - name: Configurar Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
+
       - name: Instalar dependencias
         run: |
           pip install -r requirements.txt
+          pip list  # Mostrar paquetes instalados
+
       - name: Iniciar aplicación Flask
         run: |
           export FLASK_APP_NAME=app
           export FLASK_ENV=development
-          flask run --host=0.0.0.0 --port=5000 &
-          sleep 15
-      - name: Escaneo OWASP ZAP 
+          export SQLALCHEMY_DATABASE_URI=sqlite:///:memory:
+          export DOMAIN=localhost
+          flask run --host=0.0.0.0 --port=5000 > flask.log 2>&1 &
+          for i in {1..30}; do
+            curl -s http://localhost:5000 && break
+            echo "Esperando a que Flask inicie ($i/30)..."
+            sleep 1
+          done
+          curl http://localhost:5000 || (echo "Error: No se pudo conectar a Flask"; cat flask.log; exit 1)
+
+      - name: Escaneo OWASP ZAP
         uses: zaproxy/action-baseline@v0.14.0
         with:
           target: 'http://localhost:5000'
           fail_action: false
+          cmd_options: '-d'  # Modo debug para más detalles
+
       - name: Verificar directorio de trabajo
         run: |
           pwd
           ls -la
+
       - name: Verificar archivo generado
         run: |
           ls -l zap_baseline_report.json || echo "zap_baseline_report.json no encontrado"
           cat zap_baseline_report.json || echo "No se pudo leer zap_baseline_report.json"
+
       - name: Subir informe DAST
         uses: actions/upload-artifact@v4
         with:
