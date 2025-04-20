@@ -50,7 +50,7 @@ jobs:
         with:
           target: 'http://localhost:5000'
           fail_action: false
-          cmd_options: '-d -J report_json.json -r report.html'
+          cmd_options: '-d -J report_json.json -r report_html.html'
         
 
       - name: Verificar directorio de trabajo
