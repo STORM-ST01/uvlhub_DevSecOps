@@ -71,22 +71,30 @@ jobs:
           DEFECTDOJO_TOKEN: ${{ secrets.DEFECTDOJO_TOKEN }}
           DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
         run: |
-          ENGAGEMENT_ID=$(curl --fail --location --request POST "$DEFECTDOJO_URL/api/v2/engagements/" \
+          TODAY=$(date +%Y-%m-%d)
+          NEXT_WEEK=$(date -d "$TODAY +7 days" +%Y-%m-%d || date -v +7d +%Y-%m-%d)
+          RESPONSE=$(curl --fail --location --request POST "$DEFECTDOJO_URL/api/v2/engagements/" \
             -H "Authorization: Token $DEFECTDOJO_TOKEN" \
             -H "Content-Type: application/json" \
             --data-raw '{
               "name": "DAST-Pipeline-${{ github.run_id }}",
               "description": "Escaneo DAST para commit ${{ github.sha }}",
               "product": "${{ secrets.DEFECTDOJO_PRODUCT_ID }}",
-              "target_start": "$(date +%Y-%m-%d)",
-              "target_end": "$(date -d '+7 days' +%Y-%m-%d)",
+              "target_start": "'"$TODAY"'",
+              "target_end": "'"$NEXT_WEEK"'",
               "engagement_type": "CI/CD",
               "status": "In Progress",
               "build_id": "${{ github.run_id }}",
               "commit_hash": "${{ github.sha }}",
               "branch_tag": "${{ github.ref_name }}",
               "deduplication_on_engagement": false
-            }' | jq -r '.id')
+            }')
+          echo "Respuesta de DefectDojo: $RESPONSE"
+          ENGAGEMENT_ID=$(echo "$RESPONSE" | jq -r '.id')
+          if [ -z "$ENGAGEMENT_ID" ] || [ "$ENGAGEMENT_ID" = "null" ]; then
+            echo "Error: No se pudo crear el engagement. Respuesta: $RESPONSE"
+            exit 1
+          fi
           echo "DEFECTDOJO_ENGAGEMENT_ID=$ENGAGEMENT_ID" >> $GITHUB_ENV
 
       - name: Subir informe a DefectDojo
