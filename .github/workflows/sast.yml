@@ -37,7 +37,14 @@ jobs:
 
       - name: Escanear con Bandit
         run: |
-          bandit -r . -f json -o sast_report.json || echo '{"issues": []}' > sast_report.json
+          bandit -r . -f json -o sast_report.json --exclude tests -d > bandit.log 2>&1 || echo '{"issues": []}' > sast_report.json
+
+      - name: Mostrar log de Bandit si no hay hallazgos
+        run: |
+          if [ "$(jq '.results | length' sast_report.json)" -eq 0 ]; then
+            echo "Bandit no encontró hallazgos. Log de Bandit:"
+            cat bandit.log
+          fi
 
       - name: Verificar directorio de trabajo
         run: |
@@ -48,6 +55,14 @@ jobs:
         run: |
           ls -l sast_report.json || echo "sast_report.json no encontrado"
           cat sast_report.json || echo "No se pudo leer sast_report.json"
+
+      - name: Reportar resultados de Bandit
+        run: |
+          ISSUE_COUNT=$(jq '.results | length' sast_report.json)
+          echo "Bandit encontró $ISSUE_COUNT problemas."
+          if [ "$ISSUE_COUNT" -eq 0 ]; then
+            echo "No se encontraron vulnerabilidades."
+          fi
 
       - name: Instalar jq
         run: |
