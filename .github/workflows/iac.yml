@@ -14,20 +14,86 @@ jobs:
     steps:
       - name: Clonar repositorio
         uses: actions/checkout@v3
+
       - name: Instalar Trivy
         run: |
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+
       - name: Escanear Dockerfile
         run: |
           trivy fs --format json --output trivy_report.json . || echo '{"results": []}' > trivy_report.json
+
       - name: Verificar directorio de trabajo
         run: |
           pwd
           ls -la
+
       - name: Verificar archivo generado
         run: |
           ls -l trivy_report.json || echo "trivy_report.json no encontrado"
           cat trivy_report.json || echo "No se pudo leer trivy_report.json"
+
+      - name: Instalar jq
+        run: |
+          sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Crear engagement en DefectDojo
+        env:
+          DEFECTDOJO_TOKEN: ${{ secrets.DEFECTDOJO_TOKEN }}
+          DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
+        run: |
+          TODAY=$(date +%Y-%m-%d)
+          NEXT_WEEK=$(date -d "7 days" +%Y-%m-%d)
+          RESPONSE=$(curl --fail --location --request POST "$DEFECTDOJO_URL/api/v2/engagements/" \
+            -H "Authorization: Token $DEFECTDOJO_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data-raw '{
+              "name": "IaC-Pipeline-${{ github.run_id }}",
+              "description": "Escaneo IaC para commit ${{ github.sha }}",
+              "product": "${{ secrets.DEFECTDOJO_PRODUCT_ID }}",
+              "target_start": "'"$TODAY"'",
+              "target_end": "'"$NEXT_WEEK"'",
+              "engagement_type": "CI/CD",
+              "status": "In Progress",
+              "build_id": "${{ github.run_id }}",
+              "commit_hash": "${{ github.sha }}",
+              "branch_tag": "${{ github.ref_name }}",
+              "version": "${{ github.sha }}",
+              "deduplication_on_engagement": false
+            }')
+          echo "Respuesta de DefectDojo: $RESPONSE"
+          ENGAGEMENT_ID=$(echo "$RESPONSE" | jq -r '.id')
+          if [ -z "$ENGAGEMENT_ID" ] || [ "$ENGAGEMENT_ID" = "null" ]; then
+            echo "Error: No se pudo crear el engagement. Respuesta: $RESPONSE"
+            exit 1
+          fi
+          echo "DEFECTDOJO_ENGAGEMENT_ID=$ENGAGEMENT_ID" >> $GITHUB_ENV
+
+      - name: Subir informe a DefectDojo
+        env:
+          DEFECTDOJO_TOKEN: ${{ secrets.DEFECTDOJO_TOKEN }}
+          DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
+          ENGAGEMENT_ID: ${{ env.DEFECTDOJO_ENGAGEMENT_ID }}
+        run: |
+          RESPONSE=$(curl --fail --location --request POST "$DEFECTDOJO_URL/api/v2/import-scan/" \
+            -H "Authorization: Token $DEFECTDOJO_TOKEN" \
+            -H "Content-Type: multipart/form-data" \
+            -F "file=@trivy_report.json" \
+            -F "scan_type=Trivy Scan" \
+            -F "engagement=$ENGAGEMENT_ID" \
+            -F "verified=true" \
+            -F "active=true" \
+            -F "minimum_severity=Info" \
+            -F "skip_duplicates=true" \
+            -F "close_old_findings=false")
+          echo "Respuesta de import-scan: $RESPONSE"
+          TEST_ID=$(echo "$RESPONSE" | jq -r '.test')
+          if [ -z "$TEST_ID" ] || [ "$TEST_ID" = "null" ]; then
+            echo "Error: No se pudo importar el escaneo. Respuesta: $RESPONSE"
+            exit 1
+          fi
+          echo "Escaneo importado correctamente con Test ID: $TEST_ID"
+
       - name: Subir informe IaC
         uses: actions/upload-artifact@v4
         with:

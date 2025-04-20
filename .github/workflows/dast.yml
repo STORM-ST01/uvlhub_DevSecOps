@@ -72,7 +72,7 @@ jobs:
           DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
         run: |
           TODAY=$(date +%Y-%m-%d)
-          NEXT_WEEK=$(date -d "$TODAY +7 days" +%Y-%m-%d || date -v +7d +%Y-%m-%d)
+          NEXT_WEEK=$(date -d "7 days" +%Y-%m-%d)
           RESPONSE=$(curl --fail --location --request POST "$DEFECTDOJO_URL/api/v2/engagements/" \
             -H "Authorization: Token $DEFECTDOJO_TOKEN" \
             -H "Content-Type: application/json" \
@@ -87,6 +87,7 @@ jobs:
               "build_id": "${{ github.run_id }}",
               "commit_hash": "${{ github.sha }}",
               "branch_tag": "${{ github.ref_name }}",
+              "version": "${{ github.sha }}",
               "deduplication_on_engagement": false
             }')
           echo "Respuesta de DefectDojo: $RESPONSE"
@@ -98,17 +99,29 @@ jobs:
           echo "DEFECTDOJO_ENGAGEMENT_ID=$ENGAGEMENT_ID" >> $GITHUB_ENV
 
       - name: Subir informe a DefectDojo
-        uses: ivanamat/defectdojo-import-scan@v1
-        with:
-          token: ${{ secrets.DEFECTDOJO_TOKEN }}
-          defectdojo_url: ${{ secrets.DEFECTDOJO_URL }}
-          file: report_json.json
-          scan_type: ZAP Scan
-          engagement: ${{ env.DEFECTDOJO_ENGAGEMENT_ID }}
-          verified: true
-          active: true
-          minimum_severity: Info
-          close_old_findings: false
+        env:
+          DEFECTDOJO_TOKEN: ${{ secrets.DEFECTDOJO_TOKEN }}
+          DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
+          ENGAGEMENT_ID: ${{ env.DEFECTDOJO_ENGAGEMENT_ID }}
+        run: |
+          RESPONSE=$(curl --fail --location --request POST "$DEFECTDOJO_URL/api/v2/import-scan/" \
+            -H "Authorization: Token $DEFECTDOJO_TOKEN" \
+            -H "Content-Type: multipart/form-data" \
+            -F "file=@report_json.json" \
+            -F "scan_type=ZAP Scan" \
+            -F "engagement=$ENGAGEMENT_ID" \
+            -F "verified=true" \
+            -F "active=true" \
+            -F "minimum_severity=Info" \
+            -F "skip_duplicates=true" \
+            -F "close_old_findings=false")
+          echo "Respuesta de import-scan: $RESPONSE"
+          TEST_ID=$(echo "$RESPONSE" | jq -r '.test')
+          if [ -z "$TEST_ID" ] || [ "$TEST_ID" = "null" ]; then
+            echo "Error: No se pudo importar el escaneo. Respuesta: $RESPONSE"
+            exit 1
+          fi
+          echo "Escaneo importado correctamente con Test ID: $TEST_ID"
 
       - name: Crear issue con resultados de ZAP
         if: success()
