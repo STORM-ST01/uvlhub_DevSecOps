@@ -59,16 +59,16 @@ jobs:
 
       - name: Verificar archivo generado
         run: |
-          ls -l zap_baseline_report.json || echo "zap_baseline_report.json no encontrado"
-          cat zap_baseline_report.json || echo "No se pudo leer zap_baseline_report.json"
+          ls -l report_json.json || echo "report_json.json no encontrado"
+          cat report_json.json || echo "No se pudo leer report_json.json"
 
       - name: Crear issue con resultados de ZAP
-        if: success()  # Solo intenta crear issue si el escaneo fue exitoso
+        if: success()
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
-            const report = JSON.parse(fs.readFileSync('zap_baseline_report.json', 'utf8'));
+            const report = JSON.parse(fs.readFileSync('report_json.json', 'utf8'));
             const alerts = report.site[0].alerts || [];
             const alertSummary = alerts.map(alert => `- ${alert.name}: ${alert.riskdesc} (${alert.count} instancias)`).join('\n');
             
@@ -98,6 +98,6 @@ jobs:
         with:
           name: zap-report
           path: |
-            zap_baseline_report.json
+            report_json.json
             report_html.html
             report_md.md
