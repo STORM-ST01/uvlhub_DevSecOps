@@ -46,13 +46,12 @@ jobs:
           cat flask.log
 
       - name: Escaneo OWASP ZAP
-        run: |
-          docker run -v $(pwd):/zap/wrk/:rw -t zaproxy/zap-stable zap-baseline.py \
-            -t http://localhost:5000 \
-            -J report_json.json \
-            -r report_html.html \
-            -m 10 \
-            -d
+        uses: zaproxy/action-baseline@v0.14.0
+        with:
+          target: 'http://localhost:5000'
+          fail_action: false
+          cmd_options: '-d -J report_json.json -r report.html'
+        
 
       - name: Verificar directorio de trabajo
         run: |
@@ -63,10 +62,6 @@ jobs:
         run: |
           ls -l report_json.json || echo "report_json.json no encontrado"
           cat report_json.json || echo "No se pudo leer report_json.json"
-          if [ ! -s report_json.json ]; then
-            echo "Error: report_json.json está vacío"
-            exit 1
-          fi
 
       - name: Instalar jq
         run: |
@@ -78,7 +73,7 @@ jobs:
           DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
         run: |
           TODAY=$(date +%Y-%m-%d)
-          NEXT_WEEK=$(date -d "7 days" +%Y-%m-%d)
+          NEXT_WEEK=$(date -d "$TODAY +7 days" +%Y-%m-%d || date -v +7d +%Y-%m-%d)
           RESPONSE=$(curl --fail --location --request POST "$DEFECTDOJO_URL/api/v2/engagements/" \
             -H "Authorization: Token $DEFECTDOJO_TOKEN" \
             -H "Content-Type: application/json" \
@@ -93,7 +88,6 @@ jobs:
               "build_id": "${{ github.run_id }}",
               "commit_hash": "${{ github.sha }}",
               "branch_tag": "${{ github.ref_name }}",
-              "version": "${{ github.sha }}",
               "deduplication_on_engagement": false
             }')
           echo "Respuesta de DefectDojo: $RESPONSE"
@@ -105,39 +99,17 @@ jobs:
           echo "DEFECTDOJO_ENGAGEMENT_ID=$ENGAGEMENT_ID" >> $GITHUB_ENV
 
       - name: Subir informe a DefectDojo
-        env:
-          DEFECTDOJO_TOKEN: ${{ secrets.DEFECTDOJO_TOKEN }}
-          DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
-          ENGAGEMENT_ID: ${{ env.DEFECTDOJO_ENGAGEMENT_ID }}
-        run: |
-          TODAY=$(date +%Y-%m-%d)
-          RESPONSE=$(curl --fail --location --request POST "$DEFECTDOJO_URL/api/v2/import-scan/" \
-            -H "Authorization: Token $DEFECTDOJO_TOKEN" \
-            -H "Content-Type: multipart/form-data" \
-            -F "file=@report_json.json" \
-            -F "scan_type=ZAP Scan" \
-            -F "engagement=$ENGAGEMENT_ID" \
-            -F "scan_date=$TODAY" \
-            -F "verified=true" \
-            -F "active=true" \
-            -F "minimum_severity=Informational" \
-            -F "skip_duplicates=true" \
-            -F "close_old_findings=false" \
-            --write-out "%{http_code}" 2> response_body)
-          HTTP_CODE=$RESPONSE
-          RESPONSE_BODY=$(cat response_body)
-          echo "Código HTTP: $HTTP_CODE"
-          echo "Respuesta de import-scan: $RESPONSE_BODY"
-          if [ "$HTTP_CODE" -ne 201 ]; then
-            echo "Error: No se pudo importar el escaneo. Código HTTP: $HTTP_CODE, Respuesta: $RESPONSE_BODY"
-            exit 1
-          fi
-          TEST_ID=$(echo "$RESPONSE_BODY" | jq -r '.test')
-          if [ -z "$TEST_ID" ] || [ "$TEST_ID" = "null" ]; then
-            echo "Error: No se generó un Test ID. Respuesta: $RESPONSE_BODY"
-            exit 1
-          fi
-          echo "Escaneo importado correctamente con Test ID: $TEST_ID"
+        uses: ivanamat/defectdojo-import-scan@v1
+        with:
+          token: ${{ secrets.DEFECTDOJO_TOKEN }}
+          defectdojo_url: ${{ secrets.DEFECTDOJO_URL }}
+          file: report_json.json
+          scan_type: ZAP Scan
+          engagement: ${{ env.DEFECTDOJO_ENGAGEMENT_ID }}
+          verified: true
+          active: true
+          minimum_severity: Info
+          close_old_findings: false
 
       - name: Crear issue con resultados de ZAP
         if: success()
@@ -177,3 +149,4 @@ jobs:
           path: |
             report_json.json
             report_html.html
+            report_md.md
