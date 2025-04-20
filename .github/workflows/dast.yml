@@ -14,7 +14,7 @@ jobs:
       - name: Configurar Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.9'
+          python-version: '3.10'
 
       - name: Instalar dependencias
         run: |
@@ -29,9 +29,9 @@ jobs:
           export SQLALCHEMY_DATABASE_URI=sqlite:///:memory:
           export DOMAIN=localhost
           flask run --host=0.0.0.0 --port=5000 > flask.log 2>&1 &
-          for i in {1..30}; do
+          for i in {1..60}; do
             curl -s http://localhost:5000 && break
-            echo "Esperando a que Flask inicie ($i/30)..."
+            echo "Esperando a que Flask inicie ($i/60)..."
             sleep 1
           done
           curl http://localhost:5000 || (echo "Error: No se pudo conectar a Flask"; cat flask.log; exit 1)
