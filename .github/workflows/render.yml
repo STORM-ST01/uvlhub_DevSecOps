@@ -7,7 +7,7 @@ on:
   pull_request:
     branches:
       - main
-  workflow_dispatch: # Permite disparar manualmente si es necesario
+  workflow_dispatch:
 
 jobs:
   check-workflows:
@@ -24,27 +24,33 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Lista de workflows a verificar
-          WORKFLOWS=("iac" "iast" "dast" "sast" "sca")
+          # Lista de nombres de workflows a verificar (nombres exactos según el campo 'name' en cada .yml)
+          WORKFLOWS=("Seguridad en Infraestructura como Código (IaC)" "Pruebas Interactivas de Seguridad (IAST)" "Pruebas Dinámicas de Seguridad (DAST)" "Pruebas Estáticas de Seguridad (SAST)" "Análisis de Composición de Código (SCA)")
           ALL_SUCCESS=true
           
+          echo "Checking workflows for commit ${{ github.sha }}"
+          
           for WORKFLOW in "${WORKFLOWS[@]}"; do
+            echo "Checking workflow: $WORKFLOW"
             # Obtener el último workflow run para el commit actual
-            RUN=$(gh run list --workflow="$WORKFLOW" --branch=main --limit=1 --json conclusion,headSha | jq -r ".[] | select(.headSha==\"${{ github.sha }}\")")
+            RUN=$(gh run list --workflow="$WORKFLOW" --branch=main --limit=1 --json conclusion,headSha,name | jq -r ".[] | select(.headSha==\"${{ github.sha }}\")")
             
             if [ -n "$RUN" ]; then
               CONCLUSION=$(echo "$RUN" | jq -r '.conclusion')
+              WORKFLOW_NAME=$(echo "$RUN" | jq -r '.name')
+              echo "Found run for workflow '$WORKFLOW_NAME' with conclusion: $CONCLUSION"
               if [ "$CONCLUSION" != "success" ]; then
-                echo "Workflow $WORKFLOW failed or was not successful (conclusion: $CONCLUSION)"
+                echo "Workflow $WORKFLOW_NAME failed or was not successful (conclusion: $CONCLUSION)"
                 ALL_SUCCESS=false
               else
-                echo "Workflow $WORKFLOW succeeded"
+                echo "Workflow $WORKFLOW_NAME succeeded"
               fi
             else
-              echo "Workflow $WORKFLOW did not run for this commit, skipping"
+              echo "No run found for workflow '$WORKFLOW' in this commit, skipping"
             fi
           done
           
+          echo "All workflows checked. Final result: all_success=$ALL_SUCCESS"
           echo "all_success=$ALL_SUCCESS" >> $GITHUB_OUTPUT
         shell: bash
 
