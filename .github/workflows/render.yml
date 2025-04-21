@@ -1,13 +1,18 @@
 name: Deploy to Render
 
 on:
-  push:
+  workflow_run:
+    workflows:
+      - Seguridad en Infraestructura como Código (IaC)
+      - Pruebas Interactivas de Seguridad (IAST)
+      - Pruebas Dinámicas de Seguridad (DAST)
+      - Pruebas Estáticas de Seguridad (SAST)
+      - Análisis de Composición de Código (SCA)
+    types:
+      - completed
     branches:
       - main
-  pull_request:
-    branches:
-      - main
-  workflow_dispatch:
+  workflow_dispatch: # Para ejecución manual
 
 jobs:
   check-workflows:
@@ -27,13 +32,12 @@ jobs:
           # Lista de nombres de workflows a verificar (nombres exactos según el campo 'name' en cada .yml)
           WORKFLOWS=("Seguridad en Infraestructura como Código (IaC)" "Pruebas Interactivas de Seguridad (IAST)" "Pruebas Dinámicas de Seguridad (DAST)" "Pruebas Estáticas de Seguridad (SAST)" "Análisis de Composición de Código (SCA)")
           ALL_SUCCESS=true
-          
-          echo "Checking workflows for commit ${{ github.sha }}"
+          echo "Checking workflows for commit ${{ github.event.workflow_run.head_sha }}"
           
           for WORKFLOW in "${WORKFLOWS[@]}"; do
             echo "Checking workflow: $WORKFLOW"
-            # Obtener el último workflow run para el commit actual
-            RUN=$(gh run list --workflow="$WORKFLOW" --branch=main --limit=1 --json conclusion,headSha,name | jq -r ".[] | select(.headSha==\"${{ github.sha }}\")")
+            # Obtener el último workflow run para el commit asociado al workflow_run
+            RUN=$(gh run list --workflow="$WORKFLOW" --branch=main --limit=1 --json conclusion,headSha,name | jq -r ".[] | select(.headSha==\"${{ github.event.workflow_run.head_sha }}\")")
             
             if [ -n "$RUN" ]; then
               CONCLUSION=$(echo "$RUN" | jq -r '.conclusion')
