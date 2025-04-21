@@ -1,18 +1,58 @@
 name: Deploy to Render
 
 on:
-  workflow_run:
-    workflows: ["iac", "iast", "dast", "sast", "sca"]
-    types:
-      - completed
+  push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch: # Permite disparar manualmente si es necesario
 
 jobs:
+  check-workflows:
+    name: Check Workflow Status
+    runs-on: ubuntu-latest
+    outputs:
+      all_success: ${{ steps.check.outputs.all_success }}
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+
+      - name: Check workflow conclusions
+        id: check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Lista de workflows a verificar
+          WORKFLOWS=("iac" "iast" "dast" "sast" "sca")
+          ALL_SUCCESS=true
+          
+          for WORKFLOW in "${WORKFLOWS[@]}"; do
+            # Obtener el último workflow run para el commit actual
+            RUN=$(gh run list --workflow="$WORKFLOW" --branch=main --limit=1 --json conclusion,headSha | jq -r ".[] | select(.headSha==\"${{ github.sha }}\")")
+            
+            if [ -n "$RUN" ]; then
+              CONCLUSION=$(echo "$RUN" | jq -r '.conclusion')
+              if [ "$CONCLUSION" != "success" ]; then
+                echo "Workflow $WORKFLOW failed or was not successful (conclusion: $CONCLUSION)"
+                ALL_SUCCESS=false
+              else
+                echo "Workflow $WORKFLOW succeeded"
+              fi
+            else
+              echo "Workflow $WORKFLOW did not run for this commit, skipping"
+            fi
+          done
+          
+          echo "all_success=$ALL_SUCCESS" >> $GITHUB_OUTPUT
+        shell: bash
+
   deploy:
     name: Deploy to Render
+    needs: check-workflows
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ needs.check-workflows.outputs.all_success == 'true' }}
     steps:
       - name: Check out the repo
         uses: actions/checkout@v4
