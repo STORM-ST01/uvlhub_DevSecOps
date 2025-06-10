@@ -73,7 +73,7 @@ python-dotenv==1.0.1
 python-sat==1.8.dev13
 pytz==2024.1
 pyzmq==26.0.3
-requests==2.32.3
+requests==2.32.4
 selenium==4.22.0
 selenium-wire==5.1.0
 setuptools==70.3.0
